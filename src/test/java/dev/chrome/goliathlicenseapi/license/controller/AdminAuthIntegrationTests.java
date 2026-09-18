@@ -4,21 +4,29 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
+import dev.chrome.goliathlicenseapi.license.dto.AdminLicenseSummary;
 import dev.chrome.goliathlicenseapi.license.dto.AdminLoginRequest;
 import dev.chrome.goliathlicenseapi.license.dto.AdminLoginResponse;
 import dev.chrome.goliathlicenseapi.license.dto.AdminMeResponse;
+import dev.chrome.goliathlicenseapi.license.dto.GenerateLicenseRequest;
+import dev.chrome.goliathlicenseapi.license.dto.GenerateLicenseResponse;
 import dev.chrome.goliathlicenseapi.license.model.AdminUser;
+import dev.chrome.goliathlicenseapi.license.model.License;
+import dev.chrome.goliathlicenseapi.license.model.LicenseExpiration;
+import dev.chrome.goliathlicenseapi.license.model.LicenseStatus;
 import dev.chrome.goliathlicenseapi.license.repository.AdminAuditLogRepository;
 import dev.chrome.goliathlicenseapi.license.repository.AdminUserRepository;
 import dev.chrome.goliathlicenseapi.license.repository.InstallationRepository;
 import dev.chrome.goliathlicenseapi.license.repository.LicenseRepository;
 import dev.chrome.goliathlicenseapi.license.service.AdminAuthService;
 import dev.chrome.goliathlicenseapi.license.service.AdminDashboardService;
+import dev.chrome.goliathlicenseapi.license.service.LicenseService;
 import dev.chrome.goliathlicenseapi.license.service.LoginRateLimiter;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -80,6 +88,39 @@ class AdminAuthIntegrationTests {
         AdminMeResponse me = service.me();
         assertThat(me.username()).isEqualTo("owner");
         SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void adminGenerationReturnsPlaintextOnceAndListingDoesNotExposeIt() {
+        when(licenseRepository.save(any(License.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LicenseService service = new LicenseService(licenseRepository);
+        GenerateLicenseResponse generated = service.generateLicense(new GenerateLicenseRequest("127.0.0.1", 25565, "1d"));
+        assertThat(generated.licenseKey()).startsWith("GOLIATH-");
+
+        License stored = new License();
+        stored.setId(UUID.randomUUID());
+        stored.setServerIp("127.0.0.1");
+        stored.setServerPort(25565);
+        stored.setExpiration(LicenseExpiration.ONE_DAY);
+        stored.setCreatedAt(Instant.now());
+        stored.setStatus(LicenseStatus.ACTIVE);
+        stored.setExpiresAt(Instant.now().plusSeconds(86400));
+        stored.setLicenseKeyHash("hash");
+        stored.setLicenseKeySalt("salt");
+
+        when(licenseRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(stored));
+        when(licenseRepository.findById(stored.getId())).thenReturn(Optional.of(stored));
+
+        AdminController controller = new AdminController(new AdminDashboardService(installationRepository, licenseRepository), service, licenseRepository, adminAuditLogRepository);
+
+        var list = controller.licenses(null, null, null, servletRequest);
+        assertThat(list.getBody()).isNotNull();
+        assertThat(list.getBody().getFirst().expirationValue()).isEqualTo("1d");
+
+        var detail = controller.findLicense(stored.getId());
+        assertThat(detail.getBody()).isNotNull();
+        assertThat(detail.getBody().expirationValue()).isEqualTo("1d");
     }
 
     @Test

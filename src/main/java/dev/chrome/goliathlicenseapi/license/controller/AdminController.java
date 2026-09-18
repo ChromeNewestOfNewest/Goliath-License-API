@@ -23,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -86,7 +87,7 @@ public class AdminController {
     public ResponseEntity<GenerateLicenseResponse> generateLicense(@Valid @RequestBody GenerateLicenseRequest request, HttpServletRequest servletRequest) {
         GenerateLicenseResponse response = licenseService.generateLicense(request);
         logAction("GENERATE_LICENSE", "Generated license for server " + request.serverIp() + ":" + request.serverPort(), servletRequest.getRemoteAddr());
-        return ResponseEntity.ok(response);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @GetMapping("/licenses/{id}")
