@@ -1,0 +1,99 @@
+package dev.chrome.goliathlicenseapi.license.controller;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+
+import dev.chrome.goliathlicenseapi.license.dto.AdminLoginRequest;
+import dev.chrome.goliathlicenseapi.license.dto.AdminLoginResponse;
+import dev.chrome.goliathlicenseapi.license.dto.AdminMeResponse;
+import dev.chrome.goliathlicenseapi.license.model.AdminUser;
+import dev.chrome.goliathlicenseapi.license.repository.AdminAuditLogRepository;
+import dev.chrome.goliathlicenseapi.license.repository.AdminUserRepository;
+import dev.chrome.goliathlicenseapi.license.repository.InstallationRepository;
+import dev.chrome.goliathlicenseapi.license.repository.LicenseRepository;
+import dev.chrome.goliathlicenseapi.license.service.AdminAuthService;
+import dev.chrome.goliathlicenseapi.license.service.AdminDashboardService;
+import dev.chrome.goliathlicenseapi.license.service.LoginRateLimiter;
+import jakarta.servlet.http.HttpServletRequest;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.server.ResponseStatusException;
+
+@ExtendWith(MockitoExtension.class)
+class AdminAuthIntegrationTests {
+
+    @Mock
+    private AuthenticationManager authenticationManager;
+
+    @Mock
+    private AdminUserRepository adminUserRepository;
+
+    @Mock
+    private AdminAuditLogRepository adminAuditLogRepository;
+
+    @Mock
+    private InstallationRepository installationRepository;
+
+    @Mock
+    private LicenseRepository licenseRepository;
+
+    @Mock
+    private HttpServletRequest servletRequest;
+
+    @Test
+    void adminLoginFailsForBadCredentials() {
+        AdminAuthService service = new AdminAuthService(authenticationManager, adminUserRepository, adminAuditLogRepository, new LoginRateLimiter());
+        when(servletRequest.getHeader("X-Forwarded-For")).thenReturn(null);
+        when(servletRequest.getRemoteAddr()).thenReturn("127.0.0.1");
+        when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
+                .thenThrow(new org.springframework.security.authentication.BadCredentialsException("bad"));
+
+        ResponseStatusException ex = org.junit.jupiter.api.Assertions.assertThrows(ResponseStatusException.class,
+                () -> service.login(new AdminLoginRequest("owner", "wrong"), servletRequest));
+        assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void adminUserCanBeLoadedAndMeReturnsDetails() {
+        AdminUser admin = new AdminUser();
+        admin.setUsername("owner");
+        admin.setLastLoginAt(Instant.now());
+        when(adminUserRepository.findByUsername("owner")).thenReturn(Optional.of(admin));
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("owner", "pw", List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
+
+        AdminAuthService service = new AdminAuthService(authenticationManager, adminUserRepository, adminAuditLogRepository, new LoginRateLimiter());
+
+        AdminMeResponse me = service.me();
+        assertThat(me.username()).isEqualTo("owner");
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void dashboardOverviewAndAnalyticsAggregateServerAndLicenseStats() {
+        AdminDashboardService service = new AdminDashboardService(installationRepository, licenseRepository);
+        when(installationRepository.findAllByOrderByLastSeenDesc()).thenReturn(List.of());
+        when(licenseRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of());
+
+        var overview = service.overview();
+        assertThat(overview.totalServers()).isZero();
+        assertThat(overview.onlineServers()).isZero();
+
+        var analytics = service.analytics();
+        assertThat(analytics.totalLicenses()).isZero();
+        assertThat(analytics.totalInstallations()).isZero();
+    }
+}
