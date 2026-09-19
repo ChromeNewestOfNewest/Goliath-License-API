@@ -12,20 +12,31 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import dev.chrome.goliathlicenseapi.license.repository.AdminUserRepository;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.web.session.SessionManagementFilter;
 
 @Configuration
 @EnableWebSecurity
 public class AdminSecurityConfig {
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http, AdminUserRepository adminUserRepository) throws Exception {
+        AdminSessionValidationFilter sessionValidationFilter = new AdminSessionValidationFilter(adminUserRepository);
+
         http
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
+                        .sessionFixation(org.springframework.security.config.Customizer.withDefaults()))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/admin/auth/login", "/error").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().permitAll())
+                .addFilterBefore(sessionValidationFilter, SessionManagementFilter.class)
                 .formLogin(form -> form.disable())
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .logout(logout -> logout
@@ -46,6 +57,29 @@ public class AdminSecurityConfig {
                             response.getWriter().write("{\"code\":\"FORBIDDEN\",\"message\":\"Admin access required.\"}");
                         }));
         return http.build();
+    }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        String adminOrigin = System.getenv().getOrDefault("APP_ADMIN_ORIGIN", "");
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        CorsConfiguration adminConfig = new CorsConfiguration();
+        if (adminOrigin != null && !adminOrigin.isBlank()) {
+            adminConfig.addAllowedOrigin(adminOrigin);
+        }
+        adminConfig.addAllowedHeader("*");
+        adminConfig.addAllowedMethod("GET");
+        adminConfig.addAllowedMethod("POST");
+        adminConfig.addAllowedMethod("PATCH");
+        adminConfig.setAllowCredentials(true);
+        source.registerCorsConfiguration("/api/v1/admin/**", adminConfig);
+
+        CorsConfiguration defaultConfig = new CorsConfiguration();
+        defaultConfig.addAllowedOriginPattern("*");
+        defaultConfig.addAllowedHeader("*");
+        defaultConfig.addAllowedMethod("*");
+        source.registerCorsConfiguration("/**", defaultConfig);
+        return source;
     }
 
     @Bean

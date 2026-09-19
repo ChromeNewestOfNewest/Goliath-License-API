@@ -6,5 +6,6 @@ public enum InstallationStatus {
     VALID,
     EXPIRED,
     REVOKED,
-    SERVER_MISMATCH
+    SERVER_MISMATCH,
+    BLOCKED
 }

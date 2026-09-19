@@ -20,6 +20,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -32,16 +33,19 @@ public class AdminAuthService {
     private final AdminUserRepository adminUserRepository;
     private final AdminAuditLogRepository adminAuditLogRepository;
     private final LoginRateLimiter loginRateLimiter;
+    private final PasswordEncoder passwordEncoder;
 
     public AdminAuthService(
             AuthenticationManager authenticationManager,
             AdminUserRepository adminUserRepository,
             AdminAuditLogRepository adminAuditLogRepository,
-            LoginRateLimiter loginRateLimiter) {
+            LoginRateLimiter loginRateLimiter,
+            PasswordEncoder passwordEncoder) {
         this.authenticationManager = authenticationManager;
         this.adminUserRepository = adminUserRepository;
         this.adminAuditLogRepository = adminAuditLogRepository;
         this.loginRateLimiter = loginRateLimiter;
+        this.passwordEncoder = passwordEncoder;
     }
 
     public AdminLoginResponse login(AdminLoginRequest request, HttpServletRequest servletRequest) {
@@ -93,6 +97,24 @@ public class AdminAuthService {
         AdminUser user = adminUserRepository.findByUsername(auth.getName())
                 .orElseThrow(() -> new IllegalStateException("Admin user not found."));
         return new AdminMeResponse(user.getUsername(), "ADMIN", user.getLastLoginAt());
+    }
+
+    public void changePassword(String currentPassword, String newPassword) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth.getName() == null) {
+            throw new ResponseStatusException(org.springframework.http.HttpStatus.UNAUTHORIZED, "Authentication required");
+        }
+        AdminUser user = adminUserRepository.findByUsername(auth.getName())
+                .orElseThrow(() -> new ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Admin user not found."));
+
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            throw new ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Current password is incorrect.");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setPasswordChangedAt(Instant.now());
+        adminUserRepository.save(user);
+        recordAudit(user.getUsername(), "PASSWORD_CHANGE", "Admin changed password.", "system");
     }
 
     private String resolveClientKey(HttpServletRequest request) {

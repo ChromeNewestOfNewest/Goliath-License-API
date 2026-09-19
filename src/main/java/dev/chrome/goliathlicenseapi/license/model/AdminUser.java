@@ -31,6 +31,9 @@ public class AdminUser {
     @Column(name = "last_login_at")
     private Instant lastLoginAt;
 
+    @Column(name = "password_changed_at")
+    private Instant passwordChangedAt;
+
     @PrePersist
     protected void onCreate() {
         if (id == null) {
@@ -87,5 +90,13 @@ public class AdminUser {
 
     public void setLastLoginAt(Instant lastLoginAt) {
         this.lastLoginAt = lastLoginAt;
+    }
+
+    public Instant getPasswordChangedAt() {
+        return passwordChangedAt;
+    }
+
+    public void setPasswordChangedAt(Instant passwordChangedAt) {
+        this.passwordChangedAt = passwordChangedAt;
     }
 }

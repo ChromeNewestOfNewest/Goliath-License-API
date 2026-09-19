@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import dev.chrome.goliathlicenseapi.license.service.RequestRateLimiter;
 
 @ExtendWith(MockitoExtension.class)
 class PluginServiceTests {
@@ -39,7 +40,7 @@ class PluginServiceTests {
 
     @BeforeEach
     void setUp() {
-        pluginService = new PluginService(licenseService, installationRepository);
+        pluginService = new PluginService(licenseService, installationRepository, new RequestRateLimiter());
     }
 
     @Test

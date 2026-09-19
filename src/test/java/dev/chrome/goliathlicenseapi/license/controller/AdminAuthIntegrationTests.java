@@ -22,6 +22,7 @@ import dev.chrome.goliathlicenseapi.license.service.AdminAuthService;
 import dev.chrome.goliathlicenseapi.license.service.AdminDashboardService;
 import dev.chrome.goliathlicenseapi.license.service.LicenseService;
 import dev.chrome.goliathlicenseapi.license.service.LoginRateLimiter;
+import dev.chrome.goliathlicenseapi.license.service.RequestRateLimiter;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.List;
@@ -62,7 +63,7 @@ class AdminAuthIntegrationTests {
 
     @Test
     void adminLoginFailsForBadCredentials() {
-        AdminAuthService service = new AdminAuthService(authenticationManager, adminUserRepository, adminAuditLogRepository, new LoginRateLimiter());
+        AdminAuthService service = new AdminAuthService(authenticationManager, adminUserRepository, adminAuditLogRepository, new LoginRateLimiter(), new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder());
         when(servletRequest.getHeader("X-Forwarded-For")).thenReturn(null);
         when(servletRequest.getRemoteAddr()).thenReturn("127.0.0.1");
         when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
@@ -83,7 +84,7 @@ class AdminAuthIntegrationTests {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken("owner", "pw", List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
 
-        AdminAuthService service = new AdminAuthService(authenticationManager, adminUserRepository, adminAuditLogRepository, new LoginRateLimiter());
+        AdminAuthService service = new AdminAuthService(authenticationManager, adminUserRepository, adminAuditLogRepository, new LoginRateLimiter(), new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder());
 
         AdminMeResponse me = service.me();
         assertThat(me.username()).isEqualTo("owner");
@@ -112,7 +113,8 @@ class AdminAuthIntegrationTests {
         when(licenseRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(stored));
         when(licenseRepository.findById(stored.getId())).thenReturn(Optional.of(stored));
 
-        AdminController controller = new AdminController(new AdminDashboardService(installationRepository, licenseRepository), service, licenseRepository, adminAuditLogRepository);
+        AdminAuthService authService = new AdminAuthService(authenticationManager, adminUserRepository, adminAuditLogRepository, new LoginRateLimiter(), new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder());
+        AdminController controller = new AdminController(new AdminDashboardService(installationRepository, licenseRepository), service, licenseRepository, adminAuditLogRepository, new RequestRateLimiter(), authService);
 
         var list = controller.licenses(null, null, null, servletRequest);
         assertThat(list.getBody()).isNotNull();

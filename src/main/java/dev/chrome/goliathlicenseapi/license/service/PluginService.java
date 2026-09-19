@@ -30,10 +30,12 @@ public class PluginService {
     private final LicenseService licenseService;
     private final InstallationRepository installationRepository;
     private final Clock clock;
+    private final RequestRateLimiter rateLimiter;
 
-    public PluginService(LicenseService licenseService, InstallationRepository installationRepository) {
+    public PluginService(LicenseService licenseService, InstallationRepository installationRepository, RequestRateLimiter rateLimiter) {
         this.licenseService = licenseService;
         this.installationRepository = installationRepository;
+        this.rateLimiter = rateLimiter;
         this.clock = Clock.systemUTC();
     }
 
@@ -63,6 +65,12 @@ public class PluginService {
         Instant now = Instant.now(clock);
         String observedIp = normalizeIp(extractRemoteIp(servletRequest));
         UUID instanceUuid;
+
+        String rateKey = "plugin:validate:" + (observedIp == null ? "unknown" : observedIp);
+        if (rateLimiter.isBlocked(rateKey)) {
+            return new PluginValidateResponse("RATE_LIMITED", "Too many requests, slow down.", null, null);
+        }
+        rateLimiter.record(rateKey);
         try {
             instanceUuid = UUID.fromString(request.instanceId());
         } catch (Exception ex) {
@@ -130,6 +138,17 @@ public class PluginService {
             return n;
         });
 
+        // If installation is blocked, respond as blocked and do not validate
+        if (inst.getBlockedAt() != null || inst.getLicenseStatus() == InstallationStatus.BLOCKED) {
+            inst.setObservedIp(observedIp != null ? observedIp : "");
+            inst.setServerPort(request.serverPort());
+            inst.setGoliathVersion(request.goliathVersion());
+            inst.setMinecraftVersion(request.minecraftVersion());
+            inst.setLastSeen(now);
+            installationRepository.save(inst);
+            return new PluginValidateResponse("BLOCKED", "Installation is administratively blocked.", null, null);
+        }
+
         inst.setObservedIp(observedIp != null ? observedIp : "");
         inst.setServerPort(request.serverPort());
         inst.setGoliathVersion(request.goliathVersion());
@@ -155,6 +174,12 @@ public class PluginService {
         }
 
         String observedIp = normalizeIp(extractRemoteIp(servletRequest));
+
+        String rateKeyHeartbeat = "plugin:heartbeat:" + request.instanceId();
+        if (rateLimiter.isBlocked(rateKeyHeartbeat)) {
+            return new PluginHeartbeatResponse("RATE_LIMITED", "Too many heartbeats, slow down.", null, null, null, null);
+        }
+        rateLimiter.record(rateKeyHeartbeat);
 
         Optional<Installation> maybe = installationRepository.findById(instanceUuid);
         Installation inst = maybe.orElseGet(() -> {

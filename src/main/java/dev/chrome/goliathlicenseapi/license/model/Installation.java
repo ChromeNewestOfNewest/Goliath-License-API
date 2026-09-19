@@ -45,6 +45,12 @@ public class Installation {
     @Column(name = "associated_license_id")
     private UUID associatedLicenseId;
 
+    @Column(name = "blocked_at")
+    private Instant blockedAt;
+
+    @Column(name = "blocked_reason", length = 255)
+    private String blockedReason;
+
     public UUID getInstanceId() {
         return instanceId;
     }
@@ -123,5 +129,21 @@ public class Installation {
 
     public void setAssociatedLicenseId(UUID associatedLicenseId) {
         this.associatedLicenseId = associatedLicenseId;
+    }
+
+    public Instant getBlockedAt() {
+        return blockedAt;
+    }
+
+    public void setBlockedAt(Instant blockedAt) {
+        this.blockedAt = blockedAt;
+    }
+
+    public String getBlockedReason() {
+        return blockedReason;
+    }
+
+    public void setBlockedReason(String blockedReason) {
+        this.blockedReason = blockedReason;
     }
 }

@@ -197,4 +197,22 @@ public class AdminDashboardService {
         }
         return counts;
     }
+
+    public Installation blockInstallation(UUID instanceId, String reason) {
+        Installation inst = installationRepository.findById(instanceId).orElseThrow(() -> new IllegalArgumentException("Installation not found."));
+        inst.setBlockedAt(Instant.now());
+        inst.setBlockedReason(reason == null ? "Blocked by admin." : reason);
+        inst.setLicenseStatus(InstallationStatus.BLOCKED);
+        installationRepository.save(inst);
+        return inst;
+    }
+
+    public Installation unblockInstallation(UUID instanceId) {
+        Installation inst = installationRepository.findById(instanceId).orElseThrow(() -> new IllegalArgumentException("Installation not found."));
+        inst.setBlockedAt(null);
+        inst.setBlockedReason(null);
+        inst.setLicenseStatus(InstallationStatus.UNLICENSED);
+        installationRepository.save(inst);
+        return inst;
+    }
 }
