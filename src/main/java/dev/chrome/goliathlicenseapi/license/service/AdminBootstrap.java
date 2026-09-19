@@ -11,6 +11,8 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 @Component
 public class AdminBootstrap {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(AdminBootstrap.class);
+
     private final AdminUserRepository adminUserRepository;
     private final PasswordEncoder passwordEncoder;
     private final String adminUsername;
@@ -19,8 +21,8 @@ public class AdminBootstrap {
     public AdminBootstrap(
             AdminUserRepository adminUserRepository,
             PasswordEncoder passwordEncoder,
-            @Value("${app.admin.username:owner}") String adminUsername,
-            @Value("${app.admin.password:change-me-please}") String adminPassword) {
+            @Value("${APP_ADMIN_USERNAME:owner}") String adminUsername,
+            @Value("${APP_ADMIN_PASSWORD:chromeRegionsDevReload100}") String adminPassword) {
         this.adminUserRepository = adminUserRepository;
         this.passwordEncoder = passwordEncoder;
         this.adminUsername = adminUsername;
@@ -29,12 +31,21 @@ public class AdminBootstrap {
 
     @EventListener(ApplicationReadyEvent.class)
     public void initializeDefaultOwnerUser() {
-        if (!adminUserRepository.existsByUsername(adminUsername)) {
-            AdminUser adminUser = new AdminUser();
-            adminUser.setUsername(adminUsername);
+        try {
+            AdminUser adminUser = adminUserRepository.findByUsername(adminUsername).orElseGet(() -> {
+                AdminUser u = new AdminUser();
+                u.setUsername(adminUsername);
+                return u;
+            });
+
+            // Always update the password hash to match configured password and ensure enabled
             adminUser.setPasswordHash(passwordEncoder.encode(adminPassword));
             adminUser.setEnabled(true);
             adminUserRepository.save(adminUser);
+
+            log.info("Admin account initialized: {}", adminUsername);
+        } catch (Exception ex) {
+            log.error("Failed to initialize admin account: {}", adminUsername, ex);
         }
     }
 }
